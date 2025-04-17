@@ -1,122 +1,174 @@
-/**
- * @file main.cpp
- * @brief BMPÍ¼ÏñÒşĞ´Ö÷³ÌĞò
- *
- * ¸Ã³ÌĞòÊµÏÖÁËÔÚBMPÍ¼ÏñÖĞÒş²ØºÍÌáÈ¡Êı¾İµÄ¹¦ÄÜ£¬Ö§³Ö¶àÖÖÒşĞ´Ä£Ê½ºÍ²ÎÊıÅäÖÃ¡£
- */
-
-#include <iostream>
+ï»¿#include <iostream>
 #include <string>
 #include <vector>
 #include <fstream>
-#include <cstdlib>
 #include <limits>
-#include <stdexcept>
 #include <locale>
+#include <iomanip>
 
 #include "BmpImage.h"
 #include "StegoCore.h"
 
+/**
+ * @file main.cpp
+ * @brief åŸºäº BMP å›¾åƒçš„éšå†™ç¨‹åºä¸»å…¥å£
+ */
+
 using namespace std;
 
-/**
- * @brief ´òÓ¡µ±Ç°µÄÒşĞ´ÅäÖÃ
- * @param ctx ÒşĞ´ÉÏÏÂÎÄ¶ÔÏó£¬°üº¬µ±Ç°ÅäÖÃ²ÎÊı
- */
-static void printStegoSettings(const StegoContext& ctx) {
-	cout << "\n===== µ±Ç°ÒşĞ´ÉèÖÃ =====" << endl;
-	cout << "Ä£Ê½: ";
-	switch (ctx.mode) {
-	case LSB_SEQUENTIAL: cout << "Ë³Ğò LSB (1Î»)"; break;
-	case LSB_RANDOM:     cout << "Ëæ»ú LSB (1Î»)";     break;
-	case LSB_ENHANCED:   cout << "ÔöÇ¿ LSB (Ë³Ğò 2Î»)"; break;
-	default:             cout << "Î´ÖªÄ£Ê½"; break;
-	}
-	cout << endl;
-
-	cout << "Í¨µÀ (BGR): 0x" << hex << ctx.channelMask << dec << " (";
-	if (ctx.channelMask & 0x01) cout << "À¶ "; // Blue
-	if (ctx.channelMask & 0x02) cout << "ÂÌ "; // Green
-	if (ctx.channelMask & 0x04) cout << "ºì "; // Red
-	cout << ")" << endl;
-
-	if (!ctx.password.empty()) {
-		cout << "ÃÜÂë: [ÒÑÉèÖÃ]" << endl;
-	}
-	else {
-		cout << "ÃÜÂë: (Î´ÉèÖÃ)" << endl;
-	}
-	cout << "×Ô¶¯¼ì²â (½öÌáÈ¡): " << (ctx.autoDetect ? "ÒÑÆôÓÃ" : "ÒÑ½ûÓÃ") << endl;
-	cout << "==========================================" << endl;
+// æ§åˆ¶å°é¢œè‰²å®šä¹‰
+namespace ConsoleColor {
+	const string Reset = "\033[0m";
+	const string Red = "\033[31m";
+	const string Green = "\033[32m";
+	const string Yellow = "\033[33m";
+	const string Blue = "\033[34m";
+	const string Magenta = "\033[35m";
+	const string Cyan = "\033[36m";
+	const string White = "\033[37m";
+	const string Bold = "\033[1m";
 }
 
 /**
- * @brief ÅäÖÃÒşĞ´²ÎÊı
- * @param ctx ÒşĞ´ÉÏÏÂÎÄ¶ÔÏó£¬½«±»ĞŞ¸Ä
- * @param isExtract ÊÇ·ñÎªÌáÈ¡²Ù×÷ÅäÖÃ£¬Ó°ÏìÊÇ·ñÏÔÊ¾×Ô¶¯¼ì²âÑ¡Ïî
+ * @brief æ‰“å°ç¨‹åºæ ‡é¢˜
+ */
+static void printTitle() {
+	cout << ConsoleColor::Cyan << ConsoleColor::Bold;
+	cout << "\nâ•â•â•â•â•â•â•â•â• BMP å›¾åƒéšå†™æ•°æ®éšè—ä¸æå–å·¥å…· â•â•â•â•â•â•â•â•â•\n"
+		<< ConsoleColor::Reset;
+}
+
+/**
+ * @brief æ‰“å°ä¸»èœå•
+ */
+static void printMainMenu() {
+	cout << "\nâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ ä¸»èœå• â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€\n";
+	cout << ConsoleColor::Yellow;
+	cout << "1. éšè—æ•°æ®åˆ° BMP å›¾åƒ\n";
+	cout << "2. ä» BMP å›¾åƒæå–æ•°æ®\n";
+	cout << "3. é…ç½®éšå†™å‚æ•°\n";
+	cout << "4. é€€å‡ºç¨‹åº\n";
+	cout << ConsoleColor::Reset;
+	cout << "â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€\n";
+	cout << "è¯·è¾“å…¥é€‰é¡¹ (1-4): ";
+}
+
+/**
+ * @brief æ‰“å°å½“å‰éšå†™è®¾ç½®
+ * @param ctx éšå†™ä¸Šä¸‹æ–‡
+ */
+static void printStegoSettings(const StegoContext& ctx) {
+	cout << "\nâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ å½“å‰éšå†™è®¾ç½® â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€\n";
+
+	// æ˜¾ç¤ºæ¨¡å¼
+	cout << "æ¨¡å¼: ";
+	cout << ConsoleColor::Yellow;
+	switch (ctx.mode) {
+	case LSB_SEQUENTIAL: cout << "é¡ºåº LSB (1 bit)"; break;
+	case LSB_RANDOM:     cout << "éšæœº LSB (1 bit)"; break;
+	case LSB_ENHANCED:   cout << "å¢å¼º LSB (2 bit)"; break;
+	default:             cout << "æœªçŸ¥";             break;
+	}
+	cout << ConsoleColor::Reset << "\n";
+
+	// æ˜¾ç¤ºé€šé“
+	cout << "é€šé“ (BGR): 0x" << hex << ctx.channelMask << dec << " (";
+	if (ctx.channelMask & 0x01) cout << ConsoleColor::Blue << "è“ " << ConsoleColor::Reset;
+	if (ctx.channelMask & 0x02) cout << ConsoleColor::Green << "ç»¿ " << ConsoleColor::Reset;
+	if (ctx.channelMask & 0x04) cout << ConsoleColor::Red << "çº¢ " << ConsoleColor::Reset;
+	cout << ")\n";
+
+	// æ˜¾ç¤ºå¯†ç çŠ¶æ€
+	cout << "å¯†ç : " << (ctx.password.empty() ?
+		ConsoleColor::Yellow + "(æœªè®¾ç½®)" + ConsoleColor::Reset :
+		ConsoleColor::Green + "[å·²è®¾ç½®]" + ConsoleColor::Reset) << "\n";
+
+	// æ˜¾ç¤ºè‡ªåŠ¨æ£€æµ‹çŠ¶æ€
+	cout << "è‡ªåŠ¨æ£€æµ‹(ä»…æå–): " << (ctx.autoDetect ?
+		ConsoleColor::Green + "å·²å¯ç”¨" + ConsoleColor::Reset :
+		ConsoleColor::Yellow + "å·²ç¦ç”¨" + ConsoleColor::Reset) << "\n";
+
+	cout << "â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€\n";
+}
+
+/**
+ * @brief é…ç½®éšå†™å‚æ•°
+ * @param ctx éšå†™ä¸Šä¸‹æ–‡
+ * @param isExtract æ˜¯å¦ä¸ºæå–æµç¨‹
  */
 static void configureStego(StegoContext& ctx, bool isExtract = false) {
 	printStegoSettings(ctx);
 
-	cout << "\n[Ñ¯ÎÊ] ÊÇ·ñĞŞ¸ÄÉèÖÃ? (y/n): ";
-	char c;
-	cin >> c;
-	// Çå³ıÊäÈë»º³åÇø£¬ÒÔ·ÀºóĞø getline ÎÊÌâ
+	cout << ConsoleColor::Cyan << "[è¯¢é—®] " << ConsoleColor::Reset
+		<< "æ˜¯å¦ä¿®æ”¹è®¾ç½®? (y/n): ";
+	char c; cin >> c;
 	cin.ignore(numeric_limits<streamsize>::max(), '\n');
 
-	if (c == 'y' || c == 'Y') {
-		if (isExtract) {
-			cout << "\n[ÌáÊ¾] ×Ô¶¯¼ì²â½«ÔÚÌáÈ¡Ê±³¢ÊÔ¶àÖÖÄ£Ê½ºÍÍ¨µÀ¡£" << endl;
-			cout << "[ÅäÖÃ] ÊÇ·ñÆôÓÃ×Ô¶¯¼ì²â? (y/n): ";
-			char adChoice;
-			cin >> adChoice;
-			ctx.autoDetect = (adChoice == 'y' || adChoice == 'Y');
-			// Çå³ıÊäÈë»º³åÇø
-			cin.ignore(numeric_limits<streamsize>::max(), '\n');
+	if (c != 'y' && c != 'Y') {
+		cout << ConsoleColor::Green << "[æç¤º] " << ConsoleColor::Reset << "ä½¿ç”¨å½“å‰è®¾ç½®\n";
+		return;
+	}
 
-			if (ctx.autoDetect) {
-				cout << "[ÌáÊ¾] ÒÑÆôÓÃ×Ô¶¯¼ì²â¡£ÌáÈ¡Ê±½«ºöÂÔÏÂ·½µÄÄ£Ê½ºÍÍ¨µÀÉèÖÃ¡£" << endl;
-			}
+	bool skipModeChannelConfig = false;
+	if (isExtract) {
+		cout << ConsoleColor::Cyan << "[é…ç½®] " << ConsoleColor::Reset
+			<< "æ˜¯å¦å¯ç”¨è‡ªåŠ¨æ£€æµ‹? (y/n): ";
+		char ad; cin >> ad;
+		ctx.autoDetect = (ad == 'y' || ad == 'Y');
+		cin.ignore(numeric_limits<streamsize>::max(), '\n');
+
+		if (ctx.autoDetect) {
+			cout << ConsoleColor::Green << "[æç¤º] " << ConsoleColor::Reset
+				<< "è‡ªåŠ¨æ£€æµ‹å·²å¯ç”¨ï¼Œè·³è¿‡æ¨¡å¼/é€šé“é…ç½®\n";
+			skipModeChannelConfig = true;
 		}
+	}
 
-		cout << "\n----- Ñ¡ÔñÒşĞ´Ä£Ê½ -----" << endl;
-		cout << "1. Ë³Ğò LSB (1Î»)" << endl;
-		cout << "2. Ëæ»ú LSB (1Î», ĞèÒªÃÜÂë)" << endl;
-		cout << "3. ÔöÇ¿ LSB (Ë³Ğò 2Î»)" << endl;
-		cout << "[ÅäÖÃ] Ñ¡ÔñÄ£Ê½ (1-3): ";
+	// å¦‚æœä¸è·³è¿‡æ¨¡å¼/é€šé“é…ç½®ï¼Œåˆ™é…ç½®è¿™äº›å‚æ•°
+	if (!skipModeChannelConfig) {
+		// é€‰æ‹©æ¨¡å¼
+		cout << "\nâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ é€‰æ‹©éšå†™æ¨¡å¼ â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€\n";
+		cout << ConsoleColor::Yellow;
+		cout << "1. é¡ºåº LSB (1 bit)\n";
+		cout << "2. éšæœº LSB (1 bit)\n";
+		cout << "3. å¢å¼º LSB (2 bit)\n";
+		cout << ConsoleColor::Reset;
+		cout << "â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€\n";
+		cout << "è¯·é€‰æ‹© (1-3): ";
+
 		int m;
-		// Ìí¼ÓÊäÈëÑéÖ¤
 		while (!(cin >> m) || m < 1 || m > 3) {
-			cout << "[´íÎó] ÊäÈëÎŞĞ§¡£ÇëÊäÈë 1, 2, »ò 3: ";
-			cin.clear(); // Çå³ı´íÎó±êÖ¾
-			cin.ignore(numeric_limits<streamsize>::max(), '\n'); // ¶ªÆú»µÊäÈë
-		}
-		cin.ignore(numeric_limits<streamsize>::max(), '\n'); // Çå³ı»»ĞĞ·û
-
-		switch (m) {
-		case 1: ctx.mode = LSB_SEQUENTIAL; break;
-		case 2: ctx.mode = LSB_RANDOM;     break;
-		case 3: ctx.mode = LSB_ENHANCED;   break;
-		}
-
-		cout << "\n----- Ñ¡ÔñÑÕÉ«Í¨µÀ (BGR) -----" << endl;
-		cout << "1. ½ö À¶   (0x01)" << endl;
-		cout << "2. ½ö ÂÌ   (0x02)" << endl;
-		cout << "3. ½ö ºì   (0x04)" << endl;
-		cout << "4. À¶ + ÂÌ (0x03)" << endl;
-		cout << "5. À¶ + ºì (0x05)" << endl;
-		cout << "6. ÂÌ + ºì (0x06)" << endl;
-		cout << "7. ËùÓĞ (À¶+ÂÌ+ºì) (0x07)" << endl;
-		cout << "[ÅäÖÃ] Ñ¡ÔñÍ¨µÀ (1-7): ";
-		int maskSel;
-		while (!(cin >> maskSel) || maskSel < 1 || maskSel > 7) {
-			cout << "[´íÎó] ÊäÈëÎŞĞ§¡£ÇëÊäÈë 1 µ½ 7: ";
+			cout << ConsoleColor::Red << "[é”™è¯¯] " << ConsoleColor::Reset
+				<< "è¾“å…¥æ— æ•ˆï¼Œè¯·è¾“å…¥ 1-3: ";
 			cin.clear();
 			cin.ignore(numeric_limits<streamsize>::max(), '\n');
 		}
+		ctx.mode = static_cast<SteganoMode>(m - 1);
 		cin.ignore(numeric_limits<streamsize>::max(), '\n');
 
-		switch (maskSel) {
+		// é€‰æ‹©é€šé“
+		cout << "\nâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ é€‰æ‹©é¢œè‰²é€šé“ â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€\n";
+		cout << ConsoleColor::Yellow;
+		cout << "1. " << ConsoleColor::Blue << "è“" << ConsoleColor::Yellow << "(0x01)\n";
+		cout << "2. " << ConsoleColor::Green << "ç»¿" << ConsoleColor::Yellow << "(0x02)\n";
+		cout << "3. " << ConsoleColor::Red << "çº¢" << ConsoleColor::Yellow << "(0x04)\n";
+		cout << "4. " << ConsoleColor::Blue << "è“" << ConsoleColor::Yellow << "+" << ConsoleColor::Green << "ç»¿" << ConsoleColor::Yellow << "(0x03)\n";
+		cout << "5. " << ConsoleColor::Blue << "è“" << ConsoleColor::Yellow << "+" << ConsoleColor::Red << "çº¢" << ConsoleColor::Yellow << "(0x05)\n";
+		cout << "6. " << ConsoleColor::Green << "ç»¿" << ConsoleColor::Yellow << "+" << ConsoleColor::Red << "çº¢" << ConsoleColor::Yellow << "(0x06)\n";
+		cout << "7. " << ConsoleColor::Blue << "è“" << ConsoleColor::Yellow << "+" << ConsoleColor::Green << "ç»¿" << ConsoleColor::Yellow << "+" << ConsoleColor::Red << "çº¢" << ConsoleColor::Yellow << "(0x07)\n";
+		cout << ConsoleColor::Reset;
+		cout << "â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€\n";
+		cout << "è¯·é€‰æ‹© (1-7): ";
+
+		int ms;
+		while (!(cin >> ms) || ms < 1 || ms > 7) {
+			cout << ConsoleColor::Red << "[é”™è¯¯] " << ConsoleColor::Reset
+				<< "è¾“å…¥æ— æ•ˆï¼Œè¯·è¾“å…¥ 1-7: ";
+			cin.clear();
+			cin.ignore(numeric_limits<streamsize>::max(), '\n');
+		}
+
+		switch (ms) {
 		case 1: ctx.channelMask = 0x01; break;
 		case 2: ctx.channelMask = 0x02; break;
 		case 3: ctx.channelMask = 0x04; break;
@@ -125,214 +177,213 @@ static void configureStego(StegoContext& ctx, bool isExtract = false) {
 		case 6: ctx.channelMask = 0x06; break;
 		case 7: ctx.channelMask = 0x07; break;
 		}
-
-		cout << "\n----- ÉèÖÃÃÜÂë (ÓÃÓÚ XOR ºÍ/»ò Ëæ»ú LSB) -----" << endl;
-		cout << "[ÅäÖÃ] ÊäÈëĞÂÃÜÂë (Áô¿ÕÔò²»Ê¹ÓÃÃÜÂë): ";
-		string pw;
-		getline(cin, pw);
-		ctx.password = pw;
-
-		cout << "\n[ÌáÊ¾] ÉèÖÃÒÑ¸üĞÂ¡£" << endl;
-		printStegoSettings(ctx);
+		cin.ignore(numeric_limits<streamsize>::max(), '\n');
 	}
-	else {
-		cout << "\n[ÌáÊ¾] Ê¹ÓÃµ±Ç°ÉèÖÃ¡£" << endl;
-	}
+
+	// è®¾ç½®å¯†ç 
+	cout << ConsoleColor::Cyan << "\n[é…ç½®] " << ConsoleColor::Reset
+		<< "è¾“å…¥æ–°å¯†ç  (ç•™ç©ºåˆ™ä¸ä½¿ç”¨): ";
+	string pw; getline(cin, pw);
+	ctx.password = pw;
+
+	cout << ConsoleColor::Green << "[æç¤º] " << ConsoleColor::Reset << "è®¾ç½®å·²æ›´æ–°\n";
+	printStegoSettings(ctx);
 }
 
 /**
- * @brief Ö÷º¯Êı£¬³ÌĞòÈë¿Ú
- * @return ³ÌĞòÍË³ö×´Ì¬Âë
- *
- * ÊµÏÖÁËÒ»¸ö½»»¥Ê½²Ëµ¥ÏµÍ³£¬ÔÊĞíÓÃ»§Ñ¡ÔñÒş²ØÊı¾İ¡¢ÌáÈ¡Êı¾İ»òÅäÖÃÒşĞ´²ÎÊı¡£
+ * @brief è·å–æ–‡ä»¶è·¯å¾„è¾“å…¥
+ * @param prompt æç¤ºä¿¡æ¯
+ * @return ç”¨æˆ·è¾“å…¥çš„æ–‡ä»¶è·¯å¾„
  */
+static string getFilePath(const string& prompt) {
+	cout << ConsoleColor::Cyan << prompt << ConsoleColor::Reset;
+	string path;
+	getline(cin, path);
+	return path;
+}
+
+/**
+ * @brief æ˜¾ç¤ºæ“ä½œè¿›åº¦
+ * @param message è¿›åº¦æ¶ˆæ¯
+ */
+static void showProgress(const string& message) {
+	cout << ConsoleColor::Yellow << "[è¿›è¡Œä¸­] " << ConsoleColor::Reset
+		<< message << "..." << endl;
+}
+
+/**
+ * @brief æ˜¾ç¤ºæˆåŠŸæ¶ˆæ¯
+ * @param message æˆåŠŸæ¶ˆæ¯
+ */
+static void showSuccess(const string& message) {
+	cout << ConsoleColor::Green << "[æˆåŠŸ] " << ConsoleColor::Reset
+		<< message << endl;
+}
+
+/**
+ * @brief æ˜¾ç¤ºé”™è¯¯æ¶ˆæ¯
+ * @param message é”™è¯¯æ¶ˆæ¯
+ */
+static void showError(const string& message) {
+	cerr << ConsoleColor::Red << "[é”™è¯¯] " << ConsoleColor::Reset
+		<< message << endl;
+}
+
+/**
+ * @brief æ˜¾ç¤ºä¿¡æ¯æ¶ˆæ¯
+ * @param message ä¿¡æ¯æ¶ˆæ¯
+ */
+static void showInfo(const string& message) {
+	cout << ConsoleColor::Blue << "[ä¿¡æ¯] " << ConsoleColor::Reset
+		<< message << endl;
+}
+
+/**
+ * @brief æ˜¾ç¤ºæµç¨‹æ ‡é¢˜
+ * @param title æµç¨‹æ ‡é¢˜
+ */
+static void showProcessTitle(const string& title) {
+	cout << ConsoleColor::Magenta;
+	cout << "\n===== " << title << " =====\n" << ConsoleColor::Reset;
+}
+
 int main() {
-	// ³¢ÊÔÉèÖÃ±¾µØ»¯£¬Ö÷ÒªÎªÁËÔÚÖ§³ÖµÄ»·¾³ÏÂÕıÈ·ÏÔÊ¾¿í×Ö·û
-	try {
-		setlocale(LC_ALL, "");
-	}
-	catch (const std::exception& e) {
-		cerr << "[¾¯¸æ] ÉèÖÃ±¾µØ»¯Ê§°Ü: " << e.what() << endl;
-	}
+	// è®¾ç½®æœ¬åœ°åŒ–ä»¥æ”¯æŒä¸­æ–‡
+	try { setlocale(LC_ALL, ""); }
+	catch (...) {}
 
-	cout << "======================================================" << endl;
-	cout << "       »ùÓÚÍ¼ÏñµÄĞÅÏ¢Òş²Ø - ÔÚBMPÍ¼ÏñÖĞÒş²ØÊı¾İ       " << endl;
-	cout << "======================================================" << endl;
+	printTitle();
 
-	StegoContext ctx;      // ´´½¨ÒşĞ´ÉÏÏÂÎÄ¶ÔÏó
-	StegoCore stegoCore; // ´´½¨ÒşĞ´ºËĞÄ´¦Àí¶ÔÏó
+	StegoContext ctx;
+	StegoCore    core;
 
 	while (true) {
-		cout << "\n========== Ö÷²Ëµ¥ ==========" << endl;
-		cout << "1. Òş²ØÊı¾İµ½ BMP" << endl;
-		cout << "2. ´Ó BMP ÌáÈ¡Êı¾İ" << endl;
-		cout << "3. ÅäÖÃÉèÖÃ" << endl;
-		cout << "4. ÍË³ö" << endl;
-		cout << "===========================" << endl;
-		cout << "[ÊäÈë] ÇëÊäÈëÑ¡Ïî (1-4): ";
-		int choice;
+		printMainMenu();
 
-		// ÊäÈëÑéÖ¤
+		int choice;
 		while (!(cin >> choice) || choice < 1 || choice > 4) {
-			cout << "[´íÎó] ÊäÈëÎŞĞ§¡£ÇëÊäÈë 1, 2, 3, »ò 4: ";
+			cout << ConsoleColor::Red << "[é”™è¯¯] " << ConsoleColor::Reset
+				<< "è¾“å…¥æ— æ•ˆï¼Œè¯·è¾“å…¥ 1-4: ";
 			cin.clear();
 			cin.ignore(numeric_limits<streamsize>::max(), '\n');
 		}
-		cin.ignore(numeric_limits<streamsize>::max(), '\n'); // ÏûºÄ»»ĞĞ·û
+		cin.ignore(numeric_limits<streamsize>::max(), '\n');
 
 		if (choice == 4) {
-			cout << "\n[ÌáÊ¾] ÕıÔÚÍË³ö³ÌĞò¡£" << endl;
-			break; // ÍË³öÑ­»·
+			cout << ConsoleColor::Green << "\n[æç¤º] " << ConsoleColor::Reset
+				<< "æ„Ÿè°¢ä½¿ç”¨ï¼Œç¨‹åºå·²å®‰å…¨é€€å‡º\n";
+			break;
 		}
-		else if (choice == 3) {
-			configureStego(ctx, false); // ÅäÖÃÍ¨ÓÃÉèÖÃ
-			continue; // ·µ»ØÖ÷²Ëµ¥
+
+		if (choice == 3) {
+			showProcessTitle("éšå†™å‚æ•°é…ç½®");
+			configureStego(ctx, false);
+			continue;
 		}
-		else if (choice == 1) { // Hide data
-			cout << "\n--- Òş²ØÊı¾İ ---" << endl;
-			configureStego(ctx, false); // ¼ì²é/ÅäÖÃÒş²ØÉèÖÃ
 
-			cout << "\n[ÊäÈë] ÇëÊäÈëÔ­Ê¼ BMP Í¼ÏñÎÄ¼şÂ·¾¶: ";
-			string bmpFile;
-			getline(cin, bmpFile);
+		if (choice == 1) {
+			// éšè—æµç¨‹
+			showProcessTitle("æ•°æ®éšè—æµç¨‹");
+			configureStego(ctx, false);
 
+			string bmpPath = getFilePath("è¯·è¾“å…¥åŸå§‹ BMP æ–‡ä»¶è·¯å¾„: ");
 			BmpImage bmp;
-			if (!bmp.load(bmpFile)) {
-				cerr << "[´íÎó] ¼ÓÔØ BMP ÎÄ¼şÊ§°Ü¡£" << endl;
-				continue; // ·µ»ØÖ÷²Ëµ¥
-			}
 
-			// ¼ì²éÍ¼ÏñÊÇ·ñÓĞĞ§(ÀıÈç£¬ÊÇ·ñÎª24/32Î»)
-			if (bmp.getBitCount() != 24 && bmp.getBitCount() != 32) {
-				cerr << "[´íÎó] ½öÖ§³Ö 24Î» »ò 32Î» BMP Í¼ÏñÓÃÓÚÒş²Ø¡£" << endl;
+			showProgress("åŠ è½½ BMP æ–‡ä»¶");
+			if (!bmp.load(bmpPath)) {
+				showError("åŠ è½½A BMP æ–‡ä»¶å¤±è´¥");
 				continue;
 			}
-			if (bmp.getPixelDataSize() == 0) {
-				cerr << "[´íÎó] BMP Í¼ÏñÃ»ÓĞÏñËØÊı¾İ¡£" << endl;
-				continue;
-			}
+			showInfo("BMP å›¾åƒå°ºå¯¸: " + to_string(bmp.getWidth()) + "x" + to_string(bmp.getHeight()));
 
-			cout << "[ÊäÈë] ÇëÊäÈëÒªÒş²ØµÄÎÄ¼şÂ·¾¶: ";
-			string hideFile;
-			getline(cin, hideFile);
-
-			ifstream fin(hideFile, ios::binary | ios::ate); // ate: ´ò¿ª²¢¶¨Î»µ½Ä©Î²ÒÔ»ñÈ¡´óĞ¡
+			string inPath = getFilePath("è¯·è¾“å…¥è¦éšè—çš„æ–‡ä»¶è·¯å¾„: ");
+			ifstream fin(inPath, ios::binary | ios::ate);
 			if (!fin.is_open()) {
-				cerr << "\n[´íÎó] ÎŞ·¨´ò¿ªÒªÒş²ØµÄÎÄ¼ş: " << hideFile << endl;
+				showError("æ‰“å¼€æ–‡ä»¶å¤±è´¥: " + inPath);
 				continue;
 			}
 
-			streamsize fsize = fin.tellg(); // »ñÈ¡ÎÄ¼ş´óĞ¡
-			if (fsize <= 0) {
-				cerr << "\n[´íÎó] ÒªÒş²ØµÄÎÄ¼şÎª¿Õ»ò´óĞ¡ÎŞĞ§: " << hideFile << endl;
-				fin.close();
-				continue;
-			}
-			if (fsize > numeric_limits<uint32_t>::max()) {
-				cerr << "\n[´íÎó] ÒªÒş²ØµÄÎÄ¼ş¹ı´ó (³¬¹ıÄÚ²¿ÏŞÖÆ)¡£" << endl;
+			auto sz = fin.tellg();
+			if (sz <= 0 || sz > numeric_limits<uint32_t>::max()) {
+				showError("æ–‡ä»¶å¤§å°ä¸åˆæ³•: " + to_string(sz) + " å­—èŠ‚");
 				fin.close();
 				continue;
 			}
 
-			fin.seekg(0, ios::beg); // »Øµ½ÎÄ¼ş¿ªÍ·
-			vector<char> buffer; // Ê¹ÓÃ vector ¹ÜÀí»º³åÇø
-			try {
-				buffer.resize(fsize);
-				fin.read(buffer.data(), fsize);
-				if (!fin) { // ¼ì²é¶ÁÈ¡²Ù×÷ÊÇ·ñ³É¹¦
-					cerr << "\n[´íÎó] Î´ÄÜÍêÕû¶ÁÈ¡ÎÄ¼şÄÚÈİ: " << hideFile << endl;
-					fin.close();
-					continue;
-				}
-			}
-			catch (const std::bad_alloc& e) {
-				cerr << "\n[´íÎó] ·ÖÅäÄÚ´æ¶ÁÈ¡ÎÄ¼şÊ§°Ü: " << fsize << " ×Ö½Ú¡£ " << e.what() << endl;
-				fin.close();
-				continue;
-			}
-			catch (const std::exception& e) {
-				cerr << "\n[´íÎó] ¶ÁÈ¡ÎÄ¼şÊ±·¢ÉúÒâÍâ´íÎó: " << e.what() << endl;
-				fin.close();
-				continue;
-			}
+			showInfo("å¾…éšè—æ–‡ä»¶å¤§å°: " + to_string(sz) + " å­—èŠ‚");
+			fin.seekg(0, ios::beg);
+			vector<char> buffer(sz);
+			fin.read(buffer.data(), sz);
 			fin.close();
 
-			cout << "\n[ÌáÊ¾] ³¢ÊÔÒş²Ø " << buffer.size() << " ×Ö½Ú..." << endl;
-			if (stegoCore.hideData(bmp, buffer.data(), buffer.size(), ctx)) {
-				cout << "\n[ÊäÈë] ÇëÊäÈëÒª±£´æµÄÊä³ö BMP ÎÄ¼şÂ·¾¶ (°üº¬Òş²ØÊı¾İ): ";
-				string outBmp;
-				getline(cin, outBmp);
+			showProgress("æ­£åœ¨æ‰§è¡Œæ•°æ®éšè—");
+			if (core.hideData(bmp, buffer.data(), buffer.size(), ctx)) {
+				string outBmp = getFilePath("è¯·è¾“å…¥è¾“å‡º BMP æ–‡ä»¶è·¯å¾„: ");
 
-				if (bmp.save(outBmp)) {
-					cout << "\n[³É¹¦] Êı¾İÒş²Ø³É¹¦¡£Êä³öÒÑ±£´æµ½: " << outBmp << endl;
-				}
-				else {
-					cerr << "\n[´íÎó] ±£´æÊä³ö BMP ÎÄ¼şÊ§°Ü¡£" << endl;
-				}
+				showProgress("ä¿å­˜éšå†™åçš„ BMP æ–‡ä»¶");
+				if (bmp.save(outBmp))
+					showSuccess("éšå†™å®Œæˆï¼Œè¾“å‡ºæ–‡ä»¶: " + outBmp);
+				else
+					showError("ä¿å­˜ BMP æ–‡ä»¶å¤±è´¥");
 			}
 			else {
-				cerr << "\n[´íÎó] Òş²ØÊı¾İÊ§°Ü¡£Çë¼ì²éÈİÁ¿ºÍÉèÖÃ¡£" << endl;
+				showError("æ•°æ®éšè—å¤±è´¥ï¼Œå¯èƒ½æ˜¯å›¾åƒå®¹é‡ä¸è¶³æˆ–å‚æ•°è®¾ç½®ä¸å½“");
 			}
 		}
 		else if (choice == 2) {
-			cout << "\n--- ÌáÈ¡Êı¾İ ---" << endl;
+			// æå–æµç¨‹
+			showProcessTitle("æ•°æ®æå–æµç¨‹");
 			configureStego(ctx, true);
 
-			cout << "\n[ÊäÈë] ÇëÊäÈë°üº¬Òş²ØÊı¾İµÄ BMP Í¼ÏñÎÄ¼şÂ·¾¶: ";
-			string bmpFile;
-			getline(cin, bmpFile);
-
+			string bmpPath = getFilePath("è¯·è¾“å…¥å«éšè—æ•°æ®çš„ BMP æ–‡ä»¶è·¯å¾„: ");
 			BmpImage bmp;
-			if (!bmp.load(bmpFile)) {
-				cerr << "[´íÎó] ¼ÓÔØ BMP ÎÄ¼şÊ§°Ü¡£" << endl;
-				continue;
-			}
-			if (bmp.getPixelDataSize() == 0) {
-				cerr << "[´íÎó] BMP Í¼ÏñÃ»ÓĞ¿É¹©ÌáÈ¡µÄÏñËØÊı¾İ¡£" << endl;
-				continue;
-			}
 
-			char* outData = nullptr;
+			showProgress("åŠ è½½ BMP æ–‡ä»¶");
+			if (!bmp.load(bmpPath)) {
+				showError("åŠ è½½ BMP æ–‡ä»¶å¤±è´¥");
+				continue;
+			}
+			showInfo("BMP å›¾åƒå°ºå¯¸: " + to_string(bmp.getWidth()) + "x" + to_string(bmp.getHeight()));
+
+			showProgress("æ­£åœ¨æå–éšè—æ•°æ®");
+			char* outBuf = nullptr;
 			size_t outLen = 0;
-			cout << "\n[ÌáÊ¾] ³¢ÊÔÌáÈ¡Êı¾İ..." << endl;
-			if (!stegoCore.extractData(bmp, outData, outLen, ctx)) {
-				cerr << "[ÌáÊ¾] ÌáÈ¡Êı¾İÊ§°Ü£¬»òÊ¹ÓÃµ±Ç°ÉèÖÃ/ÃÜÂëÎ´ÕÒµ½Òş²ØÊı¾İ¡£" << endl;
-				delete[] outData;
+
+			if (!core.extractData(bmp, outBuf, outLen, ctx)) {
+				showInfo("æå–å¤±è´¥æˆ–æœªæ£€æµ‹åˆ°éšè—æ•°æ®");
+				delete[] outBuf;
 			}
 			else {
-				// ÌáÈ¡³É¹¦
-				cout << "\n[³É¹¦] ³É¹¦ÌáÈ¡ " << outLen << " ×Ö½ÚµÄÒş²ØÊı¾İ¡£" << endl;
-				cout << "  ¼ì²âµ½µÄÄ£Ê½: ";
+				showSuccess("æå–åˆ° " + to_string(outLen) + " å­—èŠ‚éšè—æ•°æ®");
+
+				cout << "æ£€æµ‹åˆ°éšå†™æ¨¡å¼: " << ConsoleColor::Yellow;
 				switch (ctx.mode) {
-				case LSB_SEQUENTIAL: cout << "Ë³Ğò LSB (1Î»)"; break;
-				case LSB_RANDOM:     cout << "Ëæ»ú LSB (1Î»)";     break;
-				case LSB_ENHANCED:   cout << "ÔöÇ¿ LSB (Ë³Ğò 2Î»)"; break;
-				default:             cout << "Î´Öª"; break;
+				case LSB_SEQUENTIAL: cout << "é¡ºåº LSB"; break;
+				case LSB_RANDOM:     cout << "éšæœº LSB"; break;
+				case LSB_ENHANCED:   cout << "å¢å¼º LSB"; break;
 				}
-				cout << "\n  ¼ì²âµ½µÄÍ¨µÀ: 0x" << hex << ctx.channelMask << dec << endl;
+				cout << ConsoleColor::Reset << "\n";
 
-				cout << "[ÊäÈë] ÇëÊäÈëÒª±£´æÌáÈ¡Êı¾İµÄÎÄ¼şÂ·¾¶: ";
-				string saveFile;
-				getline(cin, saveFile);
+				cout << "æ£€æµ‹åˆ°é€šé“æ©ç : 0x" << hex << ctx.channelMask << dec << "\n";
 
-				ofstream fout(saveFile, ios::binary);
-				if (!fout.is_open()) {
-					cerr << "\n[´íÎó] ÎŞ·¨´´½¨Êä³öÎÄ¼ş: " << saveFile << endl;
+				string savePath = getFilePath("è¯·è¾“å…¥æå–æ•°æ®çš„ä¿å­˜è·¯å¾„: ");
+
+				showProgress("ä¿å­˜æå–çš„æ•°æ®");
+				ofstream fout(savePath, ios::binary);
+				if (fout.is_open()) {
+					fout.write(outBuf, outLen);
+					fout.close();
+					showSuccess("éšè—æ•°æ®å·²ä¿å­˜åˆ°: " + savePath);
 				}
 				else {
-					fout.write(outData, outLen);
-					fout.close();
-					if (!fout) {
-						cerr << "\n[´íÎó] Î´ÄÜ½«ËùÓĞÌáÈ¡µÄÊı¾İĞ´ÈëÎÄ¼ş: " << saveFile << endl;
-					}
-					else {
-						cout << "\n[³É¹¦] ÌáÈ¡µÄÊı¾İÒÑ³É¹¦±£´æµ½: " << saveFile << endl;
-					}
+					showError("æ— æ³•åˆ›å»ºè¾“å‡ºæ–‡ä»¶: " + savePath);
 				}
-				delete[] outData;
-				outData = nullptr;
+				delete[] outBuf;
 			}
 		}
+
+		cout << "\næŒ‰ Enter é”®ç»§ç»­...";
+		cin.get();
 	}
 
 	return EXIT_SUCCESS;

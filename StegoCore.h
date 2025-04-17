@@ -8,231 +8,148 @@
 #include <limits>
 
 /**
- * @enum SteganoMode
- * @brief 定义隐写算法的三种工作模式
+ * @file StegoCore.h
+ * @brief BMP图像隐写核心类声明
+ * @version 1.0
+ * @copyright Copyright 2025, 信息隐藏第6组
  *
- * @var LSB_SEQUENTIAL 顺序最低有效位隐写（每个颜色通道使用最低1位）
- * @var LSB_RANDOM     基于密码的随机位置隐写（每个颜色通道最低1位）
- * @var LSB_ENHANCED   高容量顺序隐写（每个颜色通道最低2位）
+ * 本文件定义了基于LSB(最低有效位)算法的BMP图像隐写核心功能，
+ * 支持多种隐写模式和通道选择，包含完整的数据校验和加密机制。
  */
+
+ /**
+  * @enum SteganoMode
+  * @brief 隐写算法模式枚举
+  *
+  * 定义三种不同的LSB隐写实现方式，适用于不同安全级别的应用场景。
+  */
 enum SteganoMode : uint16_t {
-	LSB_SEQUENTIAL = 0,
-	LSB_RANDOM = 1,
-	LSB_ENHANCED = 2
+	LSB_SEQUENTIAL = 0, ///< 顺序LSB模式(1 bit/通道)，隐写容量最大但安全性最低
+	LSB_RANDOM = 1,     ///< 随机LSB模式(1 bit/通道)，需要密码且随机分布像素
+	LSB_ENHANCED = 2    ///< 增强LSB模式(2 bit/通道)，平衡容量和隐蔽性
 };
 
 /**
  * @struct StegoContext
- * @brief 隐写操作运行时配置参数集
+ * @brief 隐写操作运行时参数配置
  *
- * @var mode       隐写算法模式选择
- * @var channelMask 颜色通道选择掩码（位组合：0x01蓝 0x02绿 0x04红）
- * @var password   加密/随机模式密码（空字符串表示禁用）
- * @var autoDetect 提取时是否启用自动模式检测
+ * 包含隐写操作的所有可配置参数，作为hideData/extractData的输入输出上下文。
  */
 struct StegoContext {
-	SteganoMode mode = LSB_SEQUENTIAL;
-	uint16_t    channelMask = 0x01;
-	std::string password;
-	bool        autoDetect = false;
+	SteganoMode mode = LSB_SEQUENTIAL; ///< 当前隐写模式，默认为顺序LSB
+	uint16_t    channelMask = 0x01;    ///< 颜色通道掩码(B=0x1,G=0x2,R=0x4)
+	std::string password;              ///< 加密密码(用于随机模式或数据加密)
+	bool        autoDetect = false;    ///< 是否自动检测隐写模式和通道掩码
 };
 
+#pragma pack(push, 1)
 /**
  * @struct StegoHeader
- * @brief 隐写数据头部结构（16字节固定大小）
+ * @brief 隐写数据头部结构(16字节)
  *
- * @note 使用#pragma pack确保内存对齐
- * @var signature   文件魔数（"STEG"）
- * @var dataLength  隐写数据实际长度（字节）
- * @var crc32Value  原始数据CRC32校验值（加密前）
- * @var stegoMode   实际使用的隐写模式
- * @var channelMask 实际使用的通道掩码
+ * 嵌入到BMP像素数据前的元信息头，用于存储隐写数据的描述信息和校验值。
+ * 采用紧凑内存布局(#pragma pack(1))确保跨平台兼容性。
  */
-#pragma pack(push, 1)
 struct StegoHeader {
-	char     signature[4];
-	uint32_t dataLength;
-	uint32_t crc32Value;
-	uint16_t stegoMode;
-	uint16_t channelMask;
+	char     signature[4];  ///< 文件标识魔数"STEG"(0x53 0x54 0x45 0x47)
+	uint32_t dataLength;    ///< 隐写数据实际长度(字节)，不含头部
+	uint32_t crc32Value;    ///< 原始数据的CRC32校验值(用于完整性验证)
+	uint16_t stegoMode;     ///< 实际使用的SteganoMode枚举值
+	uint16_t channelMask;   ///< 实际使用的通道掩码组合
 };
 #pragma pack(pop)
-
-static_assert(sizeof(StegoHeader) == 16, "StegoHeader必须严格16字节");
+static_assert(sizeof(StegoHeader) == 16, "StegoHeader 大小必须为 16 字节");
 
 /**
  * @class StegoCore
- * @brief BMP图像隐写术核心实现类
+ * @brief BMP图像LSB隐写算法核心实现
  *
- * 提供基于LSB算法的数据隐藏/提取功能，支持三种隐写模式：
- * 1. 顺序LSB隐写（基础模式）
- * 2. 随机位置LSB隐写（安全性增强）
- * 3. 增强容量LSB隐写（容量倍增）
+ * 提供完整的隐写功能：
+ * 1. 支持多种LSB隐写模式(顺序/随机/增强)
+ * 2. 可选择RGB通道组合(B/G/R任意组合)
+ * 3. 数据加密(XOR混淆)和CRC32校验
+ * 4. 自动容量计算和模式检测
+ * 5. 完整的错误处理和边界检查
  */
-class StegoCore
-{
+class StegoCore {
 public:
 	/**
-	 * @brief 执行数据隐藏操作
-	 *
-	 * @param[in] bmp     已加载的BMP图像对象
-	 * @param[in] data    待隐藏数据指针
-	 * @param[in] length  数据长度（字节）
-	 * @param[in] ctx     隐写配置参数
-	 * @return bool       操作是否成功
-	 *
-	 * @note 自动添加16字节头部信息，实际容量需扣除头部大小
+	 * @brief 将数据隐藏到BMP图像中
+	 * @param[in,out] bmp 已加载的BMP图像对象(将被修改)
+	 * @param[in] data 待隐藏数据的只读指针
+	 * @param[in] length 待隐藏数据长度(字节)
+	 * @param[in] ctx 隐写上下文参数配置
+	 * @return 成功返回true，失败返回false
+	 * @exception 无异常抛出，但会执行严格的参数校验
+	 * @note 实际隐藏数据=16字节头+原始数据，总容量需小于图像最大容量
+	 * @warning 会直接修改BMP像素数据，建议操作前备份原图
 	 */
 	bool hideData(BmpImage& bmp, const char* data, size_t length, const StegoContext& ctx);
 
 	/**
-	 * @brief 执行数据提取操作
-	 *
-	 * @param[in] bmp        已加载的BMP图像对象
-	 * @param[out] outData   提取数据缓冲区指针（需调用者释放）
-	 * @param[out] outLength 提取数据实际长度
-	 * @param[in,out] ctx    隐写配置参数（autoDetect=true时会修改模式参数）
-	 * @return bool          操作是否成功
+	 * @brief 从BMP图像提取隐藏数据
+	 * @param[in] bmp 已加载的BMP图像对象(只读)
+	 * @param[out] outData 输出数据缓冲区指针(需调用者delete[])
+	 * @param[out] outLength 输出数据实际长度
+	 * @param[in,out] ctx 隐写上下文(autoDetect=true时会更新mode和channelMask)
+	 * @return 成功返回true，失败返回false
+	 * @exception 无异常抛出，但会校验数据完整性和密码正确性
+	 * @note 输出缓冲区由本函数分配，调用者负责释放
+	 * @warning 当autoDetect=true时，可能修改ctx中的mode和channelMask值
 	 */
 	bool extractData(const BmpImage& bmp, char*& outData, size_t& outLength, StegoContext& ctx);
 
 private:
 	/**
 	 * @brief 计算数据的CRC32校验值
-	 *
-	 * @param buffer  数据缓冲区
-	 * @param length  数据长度（字节）
-	 * @return uint32_t 计算得到的CRC32值
+	 * @param buffer 输入数据缓冲区
+	 * @param length 数据长度(字节)
+	 * @return 32位CRC校验值
 	 */
 	uint32_t calcCRC32(const char* buffer, size_t length) const;
 
 	/**
-	 * @brief 执行XOR流加密/解密（原地操作）
-	 *
-	 * @param buffer   待处理数据缓冲区
-	 * @param length   数据长度（字节）
-	 * @param password 加密密码（空字符串跳过操作）
+	 * @brief 使用密码对缓冲区进行XOR加密/解密
+	 * @param[in,out] buffer 输入输出缓冲区(原地修改)
+	 * @param length 缓冲区长度(字节)
+	 * @param password 加密密码(空密码时不执行操作)
 	 */
 	void xorEncryptBuffer(char* buffer, size_t length, const std::string& password) const;
 
 	/**
-	 * @brief 写入隐写头部和有效数据
-	 *
-	 * @param bmp    目标BMP图像
-	 * @param header 16字节头部信息
-	 * @param data   有效数据指针
-	 * @param length 有效数据长度
-	 * @param ctx    隐写配置参数
-	 * @return bool  操作是否成功
+	 * @brief 计算BMP图像的隐写容量
+	 * @param bmp BMP图像对象
+	 * @param ctx 隐写上下文参数
+	 * @return 最大可隐藏数据量(字节)，含16字节头
 	 */
-	bool writeAll(BmpImage& bmp, const StegoHeader& header, const char* data, size_t length, const StegoContext& ctx);
+	size_t calculateCapacity(const BmpImage& bmp, const StegoContext& ctx) const;
 
-	/**
-	 * @brief 从BMP图像读取隐写头部
-	 *
-	 * @param[in] bmp              源BMP图像
-	 * @param[out] headerOut       头部信息输出
-	 * @param[in] modeToTry        尝试的隐写模式
-	 * @param[in] channelMaskToTry 尝试的通道掩码
-	 * @param[in] password         随机模式密码
-	 * @param[in] checkSignature   是否验证魔数
-	 * @return bool                是否成功读取
-	 */
+	/* 核心读写实现方法 */
+	bool writeAll(BmpImage& bmp, const StegoHeader& header,
+		const char* data, size_t length, const StegoContext& ctx);
 	bool readHeader(const BmpImage& bmp, StegoHeader& headerOut,
 		SteganoMode modeToTry, uint16_t channelMaskToTry,
 		const std::string& password, bool checkSignature) const;
-
-	/**
-	 * @brief 读取隐写数据部分
-	 *
-	 * @param[in] bmp              源BMP图像
-	 * @param[in] header           已解析的头部信息
-	 * @param[out] dataOut         数据输出缓冲区（需预分配）
-	 * @param[in] length           预期数据长度
-	 * @param[in] modeToTry        尝试的隐写模式
-	 * @param[in] channelMaskToTry 尝试的通道掩码
-	 * @param[in] password         随机模式密码
-	 * @return bool                是否成功读取
-	 */
 	bool readDataSection(const BmpImage& bmp, const StegoHeader& header,
 		char* dataOut, size_t length,
 		SteganoMode modeToTry, uint16_t channelMaskToTry,
 		const std::string& password) const;
 
-	/**
-	 * @brief 顺序LSB写入实现
-	 *
-	 * @param[in,out] pixelData    像素数据缓冲区
-	 * @param[in] pixelDataSize    像素数据总大小
-	 * @param[in] src              源数据指针
-	 * @param[in] numBytes         写入字节数
-	 * @param[in] channelMask      颜色通道掩码
-	 * @param[in] bitsPerChannel   每通道写入位数（1或2）
-	 * @return bool                操作是否成功
-	 */
+	/* 各模式的具体实现 */
 	bool writeSequentialLSB(unsigned char* pixelData, size_t pixelDataSize,
 		const char* src, size_t numBytes,
 		uint16_t channelMask, int bitsPerChannel) const;
-
-	/**
-	 * @brief 顺序LSB读取实现
-	 *
-	 * @param[in] pixelData       像素数据缓冲区（只读）
-	 * @param[out] dst            输出数据缓冲区
-	 * @param[in] pixelDataSize   像素数据总大小
-	 * @param[in] numBytes        读取字节数
-	 * @param[in] channelMask     颜色通道掩码
-	 * @param[in] bitsPerChannel  每通道读取位数（1或2）
-	 * @return bool               操作是否成功
-	 */
 	bool readSequentialLSB(const unsigned char* pixelData, size_t pixelDataSize,
 		char* dst, size_t numBytes,
 		uint16_t channelMask, int bitsPerChannel) const;
-
-	/**
-	 * @brief 随机LSB写入实现
-	 *
-	 * @param[in,out] pixelData    像素数据缓冲区
-	 * @param[in] pixelDataSize    像素数据总大小
-	 * @param[in] src              源数据指针
-	 * @param[in] numBytes         写入字节数
-	 * @param[in] channelMask      颜色通道掩码
-	 * @param[in] bitsPerChannel   每通道写入位数（当前仅支持1）
-	 * @param[in] password         随机序列生成密码
-	 * @param[in] offsetBits       LSB流起始偏移（默认0）
-	 * @return bool                操作是否成功
-	 */
 	bool writeRandomLSB(unsigned char* pixelData, size_t pixelDataSize,
 		const char* src, size_t numBytes,
 		uint16_t channelMask, int bitsPerChannel,
 		const std::string& password, size_t offsetBits = 0) const;
-
-	/**
-	 * @brief 随机LSB读取实现
-	 *
-	 * @param[in] pixelData       像素数据缓冲区（只读）
-	 * @param[out] dst            输出数据缓冲区
-	 * @param[in] pixelDataSize   像素数据总大小
-	 * @param[in] numBytes        读取字节数
-	 * @param[in] channelMask     颜色通道掩码
-	 * @param[in] bitsPerChannel  每通道读取位数（当前仅支持1）
-	 * @param[in] password        随机序列生成密码
-	 * @param[in] offsetBits      LSB流起始偏移（默认0）
-	 * @return bool               操作是否成功
-	 */
 	bool readRandomLSB(const unsigned char* pixelData, size_t pixelDataSize,
 		char* dst, size_t numBytes,
 		uint16_t channelMask, int bitsPerChannel,
 		const std::string& password, size_t offsetBits = 0) const;
-
-	/**
-	 * @brief 计算图像隐写容量
-	 *
-	 * @param[in] bmp  目标BMP图像
-	 * @param[in] ctx  隐写配置参数
-	 * @return size_t  最大可隐藏字节数（不含头部）
-	 */
-	size_t calculateCapacity(const BmpImage& bmp, const StegoContext& ctx) const;
 };
 
 #endif // STEGO_CORE_H
