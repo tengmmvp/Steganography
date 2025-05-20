@@ -9,7 +9,6 @@
 /**
  * @file BmpImage.h
  * @brief BMP图像文件读写处理类声明
- * @version 1.0
  * @copyright Copyright 2025, 信息隐藏第6组
  *
  * 本文件定义了BMP图像文件格式的结构体和处理类，支持24位和32位未压缩BMP格式的读写操作。

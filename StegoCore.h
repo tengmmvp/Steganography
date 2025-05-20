@@ -10,7 +10,6 @@
 /**
  * @file StegoCore.h
  * @brief BMP图像隐写核心类声明
- * @version 1.0
  * @copyright Copyright 2025, 信息隐藏第6组
  *
  * 本文件定义了基于LSB(最低有效位)算法的BMP图像隐写核心功能，

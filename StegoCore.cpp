@@ -10,7 +10,6 @@
 /**
  * @file StegoCore.cpp
  * @brief BMP图像LSB隐写算法核心实现
- * @version 1.0
  * @copyright Copyright 2025, 信息隐藏第6组
  *
  * 本文件实现了StegoCore类的所有功能，包括：

@@ -6,7 +6,6 @@
 /**
  * @file BmpImage.cpp
  * @brief BMP图像文件加载与保存实现
- * @version 1.0
  * @copyright Copyright 2025, 信息隐藏第6组
  *
  * 本文件实现了BmpImage类的所有功能，包括BMP文件的加载解析和保存操作。
